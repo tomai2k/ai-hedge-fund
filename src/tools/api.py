@@ -19,8 +19,28 @@ from src.data.models import (
     CompanyFactsResponse,
 )
 
+from datetime import timedelta
+
 # Global cache instance
 _cache = get_cache()
+
+DBPATH = 'sqlite:///../trading/history.db'
+
+def _get_ticker_daily_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """Get ticker daily data from the database."""
+    start_date_object = datetime.strptime(start_date, "%Y-%m-%d")
+    end_date_object = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+    query = 'SELECT * FROM "' + ticker + '" WHERE Date > ? AND Date <= ? ORDER BY Date ASC'
+    try:
+        data = pd.read_sql(query, DBPATH, params = (start_date_object, end_date_object))
+        if len(data) == 0:
+            return pd.DataFrame()
+        else:
+            data['Date'] = pd.to_datetime(data['Date'])
+            return data
+    except Exception as e:
+        print(f"Error getting ticker daily data: {e}")
+        return pd.DataFrame()
 
 
 def _make_api_request(url: str, headers: dict, method: str = "GET", json_data: dict = None, max_retries: int = 3) -> requests.Response:
@@ -66,27 +86,19 @@ def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None)
     if cached_data := _cache.get_prices(cache_key):
         return [Price(**price) for price in cached_data]
 
-    # If not in cache, fetch from API
-    headers = {}
-    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
-    if financial_api_key:
-        headers["X-API-KEY"] = financial_api_key
+    # Check if data is already in the database
+    df = _get_ticker_daily_data(ticker, start_date, end_date)
+    if not df.empty:
+        # Convert Date column from datetime to date string format (YYYY-MM-DD)
+        df['Date'] = df['Date'].dt.strftime('%Y-%m-%d')
+        # Rename Date column to time
+        df = df.rename(columns={'Date': 'time', 'Open': 'open', 'Close': 'close', 'High': 'high', 'Low': 'low', 'Volume': 'volume'})
+        prices_dict = df.to_dict(orient="records")
+        prices = [Price(**price) for price in prices_dict]
+        _cache.set_prices(cache_key, [p.model_dump() for p in prices])
+        return prices
 
-    url = f"https://api.financialdatasets.ai/prices/?ticker={ticker}&interval=day&interval_multiplier=1&start_date={start_date}&end_date={end_date}"
-    response = _make_api_request(url, headers)
-    if response.status_code != 200:
-        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
-
-    # Parse response with Pydantic model
-    price_response = PriceResponse(**response.json())
-    prices = price_response.prices
-
-    if not prices:
-        return []
-
-    # Cache the results using the comprehensive cache key
-    _cache.set_prices(cache_key, [p.model_dump() for p in prices])
-    return prices
+    return []
 
 
 def get_financial_metrics(
