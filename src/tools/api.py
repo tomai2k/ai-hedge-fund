@@ -19,7 +19,7 @@ from src.data.models import (
     CompanyFactsResponse,
 )
 
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 # Global cache instance
 _cache = get_cache()
@@ -123,12 +123,15 @@ def get_financial_metrics(
         headers["X-API-KEY"] = financial_api_key
 
     url = f"https://api.financialdatasets.ai/financial-metrics/?ticker={ticker}&report_period_lte={end_date}&limit={limit}&period={period}"
+
     response = _make_api_request(url, headers)
     if response.status_code != 200:
         raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
 
+    response_json = response.json()
+
     # Parse response with Pydantic model
-    metrics_response = FinancialMetricsResponse(**response.json())
+    metrics_response = FinancialMetricsResponse(**response_json)
     financial_metrics = metrics_response.financial_metrics
 
     if not financial_metrics:
@@ -175,6 +178,7 @@ def search_line_items(
     # Cache the results
     return search_results[:limit]
 
+APIKEY='FK8PO265QYZSBYE1'
 
 def get_insider_trades(
     ticker: str,
@@ -197,45 +201,51 @@ def get_insider_trades(
     if financial_api_key:
         headers["X-API-KEY"] = financial_api_key
 
-    all_trades = []
     current_end_date = end_date
 
-    while True:
-        url = f"https://api.financialdatasets.ai/insider-trades/?ticker={ticker}&filing_date_lte={current_end_date}"
-        if start_date:
-            url += f"&filing_date_gte={start_date}"
-        url += f"&limit={limit}"
+    url = f"https://www.alphavantage.co/query?function=INSIDER_TRANSACTIONS&symbol={ticker}&apikey="+APIKEY
+    response = _make_api_request(url, headers={})
+    if response.status_code != 200:
+        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
 
-        response = _make_api_request(url, headers)
-        if response.status_code != 200:
-            raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
-
-        data = response.json()
-        response_model = InsiderTradeResponse(**data)
-        insider_trades = response_model.insider_trades
-
-        if not insider_trades:
+    data = response.json()
+    trades = data['data']
+    print("got data", trades)
+    if not trades:
+        return []
+    # Convert the raw data to InsiderTrade objects with field mapping
+    insider_trades = []
+    for trade_data in trades:
+        if trade_data.get("transaction_date") > current_end_date:
+            continue
+        if start_date and trade_data.get("transaction_date") < start_date:
             break
 
-        all_trades.extend(insider_trades)
-
-        # Only continue pagination if we have a start_date and got a full page
-        if not start_date or len(insider_trades) < limit:
+        insider_trade = InsiderTrade(
+                    ticker=trade_data.get("ticker"),
+                    issuer=None,  # Not provided in your data
+                    name=trade_data.get("executive"),  # Map executive to name
+                    title=trade_data.get("executive_title"),  # Map executive_title to title
+                    is_board_director=None,  # Not provided in your data
+                    transaction_date=trade_data.get("transaction_date"),
+                    transaction_shares=float(trade_data.get("shares", 0)) if trade_data.get("shares") else None,
+                    transaction_price_per_share=float(trade_data.get("share_price", 0)) if trade_data.get("share_price") else None,
+                    transaction_value=None,  # Not provided, could calculate if needed
+                    shares_owned_before_transaction=None,  # Not provided in your data
+                    shares_owned_after_transaction=None,  # Not provided in your data
+                    security_title=trade_data.get("security_type"),  # Map security_type to security_title
+                    filing_date=trade_data.get("transaction_date")  # Use transaction_date as filing_date fallback
+                )
+        insider_trades.append(insider_trade)
+        if len(insider_trades) >= limit:
             break
 
-        # Update end_date to the oldest filing date from current batch for next iteration
-        current_end_date = min(trade.filing_date for trade in insider_trades).split("T")[0]
-
-        # If we've reached or passed the start_date, we can stop
-        if current_end_date <= start_date:
-            break
-
-    if not all_trades:
+    if not insider_trades:
         return []
 
     # Cache the results using the comprehensive cache key
-    _cache.set_insider_trades(cache_key, [trade.model_dump() for trade in all_trades])
-    return all_trades
+    _cache.set_insider_trades(cache_key, [trade.model_dump() for trade in insider_trades])
+    return insider_trades
 
 
 def get_company_news(
@@ -307,7 +317,7 @@ def get_market_cap(
 ) -> float | None:
     """Fetch market cap from the API."""
     # Check if end_date is today
-    if end_date == datetime.datetime.now().strftime("%Y-%m-%d"):
+    if end_date == datetime.now().strftime("%Y-%m-%d"):
         # Get the market cap from company facts API
         headers = {}
         financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
