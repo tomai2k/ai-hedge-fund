@@ -17,6 +17,7 @@ from src.data.models import (
     InsiderTrade,
     InsiderTradeResponse,
     CompanyFactsResponse,
+    AlphaVantageCompanyNewsResponse,
 )
 
 from datetime import timedelta, datetime
@@ -256,6 +257,14 @@ def get_company_news(
     api_key: str = None,
 ) -> list[CompanyNews]:
     """Fetch company news from cache or API."""
+    # Convert start_date from YYYY-MM-DD to YYYYMMDDTHHMM format with HHMM=0000
+    formatted_start_date = None
+    if start_date:
+        # Parse YYYY-MM-DD format and convert to YYYYMMDDTHHMM
+        formatted_start_date = datetime.strptime(start_date, "%Y-%m-%d").strftime("%Y%m%dT0000")
+    if len(end_date) > 0:
+        formatted_end_date = datetime.strptime(end_date, "%Y-%m-%d").strftime("%Y%m%dT0000")
+    
     # Create a cache key that includes all parameters to ensure exact matches
     cache_key = f"{ticker}_{start_date or 'none'}_{end_date}_{limit}"
     
@@ -269,38 +278,43 @@ def get_company_news(
     if financial_api_key:
         headers["X-API-KEY"] = financial_api_key
 
+    # Build URL for AlphaVantage NEWS_SENTIMENT API
+    url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={ticker}&apikey={APIKEY}"
+    if formatted_start_date:
+        url += f"&time_from={formatted_start_date}"
+    if formatted_end_date:
+        url += f"&time_to={formatted_end_date}"
+    url += f"&limit={limit}"
+
+    response = _make_api_request(url, headers)
+    if response.status_code != 200:
+        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
+
+    data = response.json()
+    alpha_response = AlphaVantageCompanyNewsResponse(**data)
+    
+    # Convert AlphaVantage news to CompanyNews format
     all_news = []
-    current_end_date = end_date
-
-    while True:
-        url = f"https://api.financialdatasets.ai/news/?ticker={ticker}&end_date={current_end_date}"
-        if start_date:
-            url += f"&start_date={start_date}"
-        url += f"&limit={limit}"
-
-        response = _make_api_request(url, headers)
-        if response.status_code != 200:
-            raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
-
-        data = response.json()
-        response_model = CompanyNewsResponse(**data)
-        company_news = response_model.news
-
-        if not company_news:
-            break
-
-        all_news.extend(company_news)
-
-        # Only continue pagination if we have a start_date and got a full page
-        if not start_date or len(company_news) < limit:
-            break
-
-        # Update end_date to the oldest date from current batch for next iteration
-        current_end_date = min(news.date for news in company_news).split("T")[0]
-
-        # If we've reached or passed the start_date, we can stop
-        if current_end_date <= start_date:
-            break
+    for news_item in alpha_response.feed:
+        # Find the ticker sentiment that matches our requested ticker
+        matching_ticker_sentiment = None
+        for ticker_sentiment in news_item.ticker_sentiments:
+            if ticker_sentiment.ticker == ticker:
+                matching_ticker_sentiment = ticker_sentiment
+                break
+        
+        # Only include news items that mention our ticker
+        if matching_ticker_sentiment:
+            converted_news = CompanyNews(
+                ticker=ticker,
+                title=news_item.title,
+                author=news_item.authors[0], # Use the first author as the author
+                source=news_item.source,
+                date=news_item.time_published,
+                url=news_item.url,
+                sentiment=matching_ticker_sentiment.ticker_sentiment_label
+            )
+            all_news.append(converted_news)
 
     if not all_news:
         return []

@@ -113,6 +113,28 @@ class CompanyNewsResponse(BaseModel):
     news: list[CompanyNews]
 
 
+class AlphaVantageTickerSentiment(BaseModel):
+    ticker: str
+    relevance_score: str
+    ticker_sentiment_score: str
+    ticker_sentiment_label: str
+
+class AlphaVantageCompanyNews(BaseModel):
+    title: str
+    url: str
+    time_published: str
+    authors: list[str]
+    source: str
+    overall_sentiment_score: float
+    overall_sentiment_label: str
+    ticker_sentiments: list[AlphaVantageTickerSentiment]
+
+class AlphaVantageCompanyNewsResponse(BaseModel):
+    items: str
+#    sentiment_score_definition: str
+#    relevance_score_definition: str
+    feed: list[AlphaVantageCompanyNews]
+
 class CompanyFacts(BaseModel):
     ticker: str
     name: str
@@ -172,3 +194,71 @@ class AgentStateData(BaseModel):
 class AgentStateMetadata(BaseModel):
     show_reasoning: bool = False
     model_config = {"extra": "allow"}
+
+
+class CompanyOverview(BaseModel):
+    Symbol: str
+    AssetType: str
+    Name: str
+    Description: str
+    CIK: str
+    Exchange: str
+    Currency: str
+    Country: str
+    Sector: str
+    Industry: str
+    Address: str
+    OfficialSite: str
+    FiscalYearEnd: str
+    LatestQuarter: str
+    MarketCapitalization: float
+    EBITDA: float
+    PERatio: float
+    PEGRatio: float
+    BookValue: float
+    DividendPerShare: float
+    DividendYield: float
+    EPS: float
+    RevenuePerShareTTM: float
+    ProfitMargin: float
+    OperatingMarginTTM: float
+    ReturnOnAssetsTTM: float
+    ReturnOnEquityTTM: float
+    RevenueTTM: float
+    GrossProfitTTM: float
+    DilutedEPSTTM: float
+    QuarterlyEarningsGrowthYOY: float
+    QuarterlyRevenueGrowthYOY: float
+    AnalystTargetPrice: float
+    AnalystRatingStrongBuy: int
+    AnalystRatingBuy: int
+    AnalystRatingHold: int
+    AnalystRatingSell: int
+    AnalystRatingStrongSell: int
+    TrailingPE: float
+    ForwardPE: float
+    PriceToSalesRatioTTM: float
+    PriceToBookRatio: float
+    EVToRevenue: float
+    EVToEBITDA: float
+    Beta: float
+    field_52WeekHigh: float = None  # Using alias for field starting with number
+    field_52WeekLow: float = None   # Using alias for field starting with number
+    field_50DayMovingAverage: float = None  # Using alias for field starting with number
+    field_200DayMovingAverage: float = None # Using alias for field starting with number
+    SharesOutstanding: int
+    SharesFloat: int
+    PercentInsiders: float
+    PercentInstitutions: float
+    DividendDate: str
+    ExDividendDate: str
+    
+    model_config = {
+        "extra": "allow",
+        "field_aliases": {
+            "field_52WeekHigh": "52WeekHigh",
+            "field_52WeekLow": "52WeekLow", 
+            "field_50DayMovingAverage": "50DayMovingAverage",
+            "field_200DayMovingAverage": "200DayMovingAverage"
+        }
+    }
