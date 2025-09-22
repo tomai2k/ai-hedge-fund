@@ -18,7 +18,14 @@ from src.data.models import (
     InsiderTradeResponse,
     CompanyFactsResponse,
     AlphaVantageCompanyNewsResponse,
+    BalanceSheetEquity,
+    BalanceSheetAssets,
+    BalanceSheetAssetsResponse,
+    BalanceSheetLiabilities,
+    CashFlowStatement,
+    IncomeStatement,
 )
+from src.data.financial_metrics_calculator import FinancialMetricsCalculator
 
 from datetime import timedelta, datetime
 
@@ -101,6 +108,159 @@ def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None)
 
     return []
 
+#references:
+#https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60balance_sheet_assets%60%0AWHERE+act_symbol+%3D+%27AMD%27+and+period+%3D+%27Quarter%27+and+date+%3E+%272010-01-01%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A
+
+def get_balance_sheet_assets(ticker: str, end_date: str, period: str = "Quarter") -> list[BalanceSheetAssets]:
+    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60balance_sheet_assets%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3E+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
+    response = _make_api_request(balance_sheet_api, headers={})
+    if response.status_code != 200:
+        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
+
+    data = response.json()
+    
+    # Check if query was successful
+    if data.get("query_execution_status") != "Success":
+        raise Exception(f"Query failed: {data.get('query_execution_message', 'Unknown error')}")
+    
+    # Extract rows from DoltHub response format
+    rows = data.get("rows", [])
+    if not rows:
+        return []
+    
+    # Convert rows to BalanceSheetAssets objects
+    balance_sheet_assets = []
+    for row in rows:
+        try:
+            asset = BalanceSheetAssets(**row)
+            balance_sheet_assets.append(asset)
+        except Exception as e:
+            print(f"Warning: Failed to parse row {row.get('date', 'unknown')}: {e}")
+            continue
+    
+    return balance_sheet_assets
+
+
+def get_balance_sheet_equity(ticker: str, end_date: str, period: str = "Quarter") -> list[BalanceSheetEquity]:
+    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60balance_sheet_equity%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3E+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
+    response = _make_api_request(balance_sheet_api, headers={})
+    if response.status_code != 200:
+        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
+
+    data = response.json()
+    
+    # Check if query was successful
+    if data.get("query_execution_status") != "Success":
+        raise Exception(f"Query failed: {data.get('query_execution_message', 'Unknown error')}")
+    
+    # Extract rows from DoltHub response format
+    rows = data.get("rows", [])
+    if not rows:
+        return []
+    
+    # Convert rows to BalanceSheetEquity objects
+    balance_sheet_equity = []
+    for row in rows:
+        try:
+            equity = BalanceSheetEquity(**row)
+            balance_sheet_equity.append(equity)
+        except Exception as e:
+            print(f"Warning: Failed to parse row {row.get('date', 'unknown')}: {e}")
+            continue
+    
+    return balance_sheet_equity
+
+
+def get_balance_sheet_liabilities(ticker: str, end_date: str, period: str = "Quarter") -> list[BalanceSheetLiabilities]:
+    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60balance_sheet_liabilities%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3E+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
+    response = _make_api_request(balance_sheet_api, headers={})
+    if response.status_code != 200:
+        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
+
+    data = response.json()
+    
+    # Check if query was successful
+    if data.get("query_execution_status") != "Success":
+        raise Exception(f"Query failed: {data.get('query_execution_message', 'Unknown error')}")
+    
+    # Extract rows from DoltHub response format
+    rows = data.get("rows", [])
+    if not rows:
+        return []
+    
+    # Convert rows to BalanceSheetLiabilities objects
+    balance_sheet_liabilities = []
+    for row in rows:
+        try:
+            liability = BalanceSheetLiabilities(**row)
+            balance_sheet_liabilities.append(liability)
+        except Exception as e:
+            print(f"Warning: Failed to parse row {row.get('date', 'unknown')}: {e}")
+            continue
+    
+    return balance_sheet_liabilities
+
+
+
+def get_cash_flow_statement(ticker: str, end_date: str, period: str = "Quarter") -> list[CashFlowStatement]:
+    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60cash_flow_statement%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3E+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
+    response = _make_api_request(balance_sheet_api, headers={})
+    if response.status_code != 200:
+        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
+
+    data = response.json()
+    
+    # Check if query was successful
+    if data.get("query_execution_status") != "Success":
+        raise Exception(f"Query failed: {data.get('query_execution_message', 'Unknown error')}")
+    
+    # Extract rows from DoltHub response format
+    rows = data.get("rows", [])
+    if not rows:
+        return []
+    
+    # Convert rows to CashFlowStatement objects
+    cash_flow_statement = []
+    for row in rows:
+        try:
+            cash_flow = CashFlowStatement(**row)
+            cash_flow_statement.append(cash_flow)
+        except Exception as e:
+            print(f"Warning: Failed to parse row {row.get('date', 'unknown')}: {e}")
+            continue
+    
+    return cash_flow_statement
+
+
+def get_income_statement(ticker: str, end_date: str, period: str = "Quarter") -> list[IncomeStatement]:
+    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60income_statement%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3E+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
+    response = _make_api_request(balance_sheet_api, headers={})
+    if response.status_code != 200:
+        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
+
+    data = response.json()
+    
+    # Check if query was successful
+    if data.get("query_execution_status") != "Success":
+        raise Exception(f"Query failed: {data.get('query_execution_message', 'Unknown error')}")
+    
+    # Extract rows from DoltHub response format
+    rows = data.get("rows", [])
+    if not rows:
+        return []
+    
+    # Convert rows to IncomeStatement objects
+    income_statement = []
+    for row in rows:
+        try:
+            income = IncomeStatement(**row)
+            income_statement.append(income)
+        except Exception as e:
+            print(f"Warning: Failed to parse row {row.get('date', 'unknown')}: {e}")
+            continue
+    
+    return income_statement
+
 
 def get_financial_metrics(
     ticker: str,
@@ -118,22 +278,24 @@ def get_financial_metrics(
         return [FinancialMetrics(**metric) for metric in cached_data]
 
     # If not in cache, fetch from API
-    headers = {}
-    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
-    if financial_api_key:
-        headers["X-API-KEY"] = financial_api_key
+    if period == "ttm":
+        period = "Quarter"
+    else:
+        period = "Year"
 
-    url = f"https://api.financialdatasets.ai/financial-metrics/?ticker={ticker}&report_period_lte={end_date}&limit={limit}&period={period}"
+    balance_sheet_assets = get_balance_sheet_assets(ticker, end_date, period)
+    balance_sheet_equity = get_balance_sheet_equity(ticker, end_date, period)
+    balance_sheet_liabilities = get_balance_sheet_liabilities(ticker, end_date, period)
+    cash_flow_statement = get_cash_flow_statement(ticker, end_date, period)
+    income_statement = get_income_statement(ticker, end_date, period)
 
-    response = _make_api_request(url, headers)
-    if response.status_code != 200:
-        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
-
-    response_json = response.json()
-
-    # Parse response with Pydantic model
-    metrics_response = FinancialMetricsResponse(**response_json)
-    financial_metrics = metrics_response.financial_metrics
+    financial_metrics = FinancialMetricsCalculator.calculate_metrics(
+        ticker,
+        balance_sheet_assets,
+        balance_sheet_equity,
+        balance_sheet_liabilities,
+        cash_flow_statement,
+        income_statement)
 
     if not financial_metrics:
         return []
@@ -197,11 +359,6 @@ def get_insider_trades(
         return [InsiderTrade(**trade) for trade in cached_data]
 
     # If not in cache, fetch from API
-    headers = {}
-    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
-    if financial_api_key:
-        headers["X-API-KEY"] = financial_api_key
-
     current_end_date = end_date
 
     url = f"https://www.alphavantage.co/query?function=INSIDER_TRANSACTIONS&symbol={ticker}&apikey="+APIKEY
@@ -273,11 +430,6 @@ def get_company_news(
         return [CompanyNews(**news) for news in cached_data]
 
     # If not in cache, fetch from API
-    headers = {}
-    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
-    if financial_api_key:
-        headers["X-API-KEY"] = financial_api_key
-
     # Build URL for AlphaVantage NEWS_SENTIMENT API
     url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={ticker}&apikey={APIKEY}"
     if formatted_start_date:
@@ -286,7 +438,7 @@ def get_company_news(
         url += f"&time_to={formatted_end_date}"
     url += f"&limit={limit}"
 
-    response = _make_api_request(url, headers)
+    response = _make_api_request(url, headers={})
     if response.status_code != 200:
         raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
 
@@ -324,40 +476,88 @@ def get_company_news(
     return all_news
 
 
+def _get_balance_sheet_equity_data(ticker: str, target_date: str) -> BalanceSheetEquity | None:
+    """Load balance sheet equity data from CSV file."""
+    try:
+        # Construct CSV file path based on ticker (assuming naming convention)
+        csv_path = f"src/data/balance_sheet_equity_{ticker.lower()}.csv"
+        if not os.path.exists(csv_path):
+            print(f"Balance sheet equity CSV not found: {csv_path}")
+            return None
+        
+        equity_df = pd.read_csv(csv_path)
+        
+        # Find the closest date match (prefer exact match, then most recent before target_date)
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        
+        # Filter for quarterly data first, then try any period
+        quarterly_data = equity_df[equity_df['period'] == 'Quarter'].copy()
+        if not quarterly_data.empty:
+            quarterly_data['date_dt'] = pd.to_datetime(quarterly_data['date'])
+            # Find exact match first
+            exact_match = quarterly_data[quarterly_data['date'] == target_date]
+            if not exact_match.empty:
+                return BalanceSheetEquity(**exact_match.iloc[0].to_dict())
+            
+            # Find most recent date before target_date
+            before_target = quarterly_data[quarterly_data['date_dt'] <= target_dt]
+            if not before_target.empty:
+                latest_row = before_target.loc[before_target['date_dt'].idxmax()]
+                return BalanceSheetEquity(**latest_row.to_dict())
+        
+        # Fallback to any available data
+        if not equity_df.empty:
+            equity_df['date_dt'] = pd.to_datetime(equity_df['date'])
+            before_target = equity_df[equity_df['date_dt'] <= target_dt]
+            if not before_target.empty:
+                latest_row = before_target.loc[before_target['date_dt'].idxmax()]
+                return BalanceSheetEquity(**latest_row.to_dict())
+        
+        return None
+    except Exception as e:
+        print(f"Error loading balance sheet equity data: {e}")
+        return None
+
+
 def get_market_cap(
     ticker: str,
     end_date: str,
     api_key: str = None,
 ) -> float | None:
-    """Fetch market cap from the API."""
-    # Check if end_date is today
-    if end_date == datetime.now().strftime("%Y-%m-%d"):
-        # Get the market cap from company facts API
-        headers = {}
-        financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
-        if financial_api_key:
-            headers["X-API-KEY"] = financial_api_key
-
-        url = f"https://api.financialdatasets.ai/company/facts/?ticker={ticker}"
-        response = _make_api_request(url, headers)
-        if response.status_code != 200:
-            print(f"Error fetching company facts: {ticker} - {response.status_code}")
+    """Calculate market cap using FinancialMetricsCalculator model (market_price * shares_outstanding)."""
+    try:
+        # Get current stock price from the most recent available data
+        prices = get_prices(ticker, end_date, end_date, api_key=api_key)
+        if not prices:
+            # Try to get prices from a few days back if exact date not available
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+            for i in range(1, 8):  # Try up to 7 days back
+                prev_date = (end_dt - timedelta(days=i)).strftime('%Y-%m-%d')
+                prices = get_prices(ticker, prev_date, prev_date, api_key=api_key)
+                if prices:
+                    break
+        
+        if not prices:
+            print(f"Could not find price data for {ticker} around {end_date}")
             return None
-
-        data = response.json()
-        response_model = CompanyFactsResponse(**data)
-        return response_model.company_facts.market_cap
-
-    financial_metrics = get_financial_metrics(ticker, end_date, api_key=api_key)
-    if not financial_metrics:
+        
+        current_price = prices[0].close  # Use closing price
+        
+        # Get shares outstanding from balance sheet equity data
+        equity_data = _get_balance_sheet_equity_data(ticker, end_date)
+        if not equity_data or not equity_data.shares_outstanding:
+            print(f"Could not find shares outstanding for {ticker} around {end_date}")
+            return None
+        
+        # Calculate market cap using FinancialMetricsCalculator logic
+        calculator = FinancialMetricsCalculator(market_price=current_price)
+        market_cap = calculator._calculate_market_cap(equity_data.shares_outstanding)
+        
+        return market_cap
+    
+    except Exception as e:
+        print(f"Error calculating market cap for {ticker}: {e}")
         return None
-
-    market_cap = financial_metrics[0].market_cap
-
-    if not market_cap:
-        return None
-
-    return market_cap
 
 
 def prices_to_df(prices: list[Price]) -> pd.DataFrame:

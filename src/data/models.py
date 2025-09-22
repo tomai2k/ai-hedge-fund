@@ -196,6 +196,137 @@ class AgentStateMetadata(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class BalanceSheetAssets(BaseModel):
+    date: str
+    act_symbol: str
+    period: str
+    cash_and_equivalents: float | None = None
+    receivables: float | None = None
+    notes_receivable: float | None = None
+    inventories: float | None = None
+    other_current_assets: float | None = None
+    total_current_assets: float | None = None
+    net_property_and_equipment: float | None = None
+    investments_and_advances: float | None = None
+    other_non_current_assets: float | None = None
+    deferred_charges: float | None = None
+    intangibles: float | None = None
+    deposits_and_other_assets: float | None = None
+    total_assets: float | None = None
+
+
+class BalanceSheetAssetsResponse(BaseModel):
+    balance_sheet_assets: list[BalanceSheetAssets]
+
+
+class BalanceSheetEquity(BaseModel):
+    act_symbol: str
+    date: str
+    period: str
+    preferred_stock: float | None = None
+    common_stock: float | None = None
+    capital_surplus: float | None = None
+    retained_earnings: float | None = None
+    other_equity: float | None = None
+    treasury_stock: float | None = None
+    total_equity: float | None = None
+    total_liabilities_and_equity: float | None = None
+    shares_outstanding: float | None = None
+    book_value_per_share: float | None = None
+
+
+class BalanceSheetEquityResponse(BaseModel):
+    balance_sheet_equity: list[BalanceSheetEquity]
+
+
+class BalanceSheetLiabilities(BaseModel):
+    act_symbol: str
+    date: str
+    period: str
+    notes_payable: float | None = None
+    accounts_payable: float | None = None
+    current_portion_long_term_debt: float | None = None
+    current_portion_capital_leases: float | None = None
+    accrued_expenses: float | None = None
+    income_taxes_payable: float | None = None
+    other_current_liabilities: float | None = None
+    total_current_liabilities: float | None = None
+    mortgages: float | None = None
+    deferred_taxes_or_income: float | None = None
+    convertible_debt: float | None = None
+    long_term_debt: float | None = None
+    non_current_capital_leases: float | None = None
+    other_non_current_liabilities: float | None = None
+    minority_interest: float | None = None
+    total_liabilities: float | None = None
+
+
+class BalanceSheetLiabilitiesResponse(BaseModel):
+    balance_sheet_liabilities: list[BalanceSheetLiabilities]
+
+
+class CashFlowStatement(BaseModel):
+    act_symbol: str
+    date: str
+    period: str
+    net_income: float | None = None
+    depreciation_amortization_and_depletion: float | None = None
+    net_change_from_assets: float | None = None
+    net_cash_from_discontinued_operations: float | None = None
+    other_operating_activities: float | None = None
+    net_cash_from_operating_activities: float | None = None
+    property_and_equipment: float | None = None
+    acquisition_of_subsidiaries: float | None = None
+    investments: float | None = None
+    other_investing_activities: float | None = None
+    net_cash_from_investing_activities: float | None = None
+    issuance_of_capital_stock: float | None = None
+    issuance_of_debt: float | None = None
+    increase_short_term_debt: float | None = None
+    payment_of_dividends_and_other_distributions: float | None = None
+    other_financing_activities: float | None = None
+    net_cash_from_financing_activities: float | None = None
+    effect_of_exchange_rate_changes: float | None = None
+    net_change_in_cash_and_equivalents: float | None = None
+    cash_at_beginning_of_period: float | None = None
+    cash_at_end_of_period: float | None = None
+    diluted_net_eps: float | None = None
+
+
+class CashFlowStatementResponse(BaseModel):
+    cash_flow_statements: list[CashFlowStatement]
+
+
+class IncomeStatement(BaseModel):
+    act_symbol: str
+    date: str
+    period: str
+    sales: float | None = None
+    cost_of_goods: float | None = None
+    gross_profit: float | None = None
+    selling_administrative_depreciation_amortization_expenses: float | None = None
+    income_after_depreciation_and_amortization: float | None = None
+    non_operating_income: float | None = None
+    interest_expense: float | None = None
+    pretax_income: float | None = None
+    income_taxes: float | None = None
+    minority_interest: float | None = None
+    investment_gains: float | None = None
+    other_income: float | None = None
+    income_from_continuing_operations: float | None = None
+    extras_and_discontinued_operations: float | None = None
+    net_income: float | None = None
+    income_before_depreciation_and_amortization: float | None = None
+    depreciation_and_amortization: float | None = None
+    average_shares: float | None = None
+    diluted_eps_before_non_recurring_items: float | None = None
+    diluted_net_eps: float | None = None
+
+
+class IncomeStatementResponse(BaseModel):
+    income_statements: list[IncomeStatement]
+
+
 class CompanyOverview(BaseModel):
     Symbol: str
     AssetType: str
