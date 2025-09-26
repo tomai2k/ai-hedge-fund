@@ -112,7 +112,7 @@ def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None)
 #https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60balance_sheet_assets%60%0AWHERE+act_symbol+%3D+%27AMD%27+and+period+%3D+%27Quarter%27+and+date+%3E+%272010-01-01%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A
 
 def get_balance_sheet_assets(ticker: str, end_date: str, period: str = "Quarter") -> list[BalanceSheetAssets]:
-    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60balance_sheet_assets%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3E+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
+    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60balance_sheet_assets%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3C+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
     response = _make_api_request(balance_sheet_api, headers={})
     if response.status_code != 200:
         raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
@@ -142,7 +142,7 @@ def get_balance_sheet_assets(ticker: str, end_date: str, period: str = "Quarter"
 
 
 def get_balance_sheet_equity(ticker: str, end_date: str, period: str = "Quarter") -> list[BalanceSheetEquity]:
-    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60balance_sheet_equity%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3E+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
+    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60balance_sheet_equity%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3C+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
     response = _make_api_request(balance_sheet_api, headers={})
     if response.status_code != 200:
         raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
@@ -172,7 +172,7 @@ def get_balance_sheet_equity(ticker: str, end_date: str, period: str = "Quarter"
 
 
 def get_balance_sheet_liabilities(ticker: str, end_date: str, period: str = "Quarter") -> list[BalanceSheetLiabilities]:
-    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60balance_sheet_liabilities%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3E+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
+    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60balance_sheet_liabilities%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3C+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
     response = _make_api_request(balance_sheet_api, headers={})
     if response.status_code != 200:
         raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
@@ -203,7 +203,7 @@ def get_balance_sheet_liabilities(ticker: str, end_date: str, period: str = "Qua
 
 
 def get_cash_flow_statement(ticker: str, end_date: str, period: str = "Quarter") -> list[CashFlowStatement]:
-    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60cash_flow_statement%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3E+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
+    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60cash_flow_statement%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3C+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
     response = _make_api_request(balance_sheet_api, headers={})
     if response.status_code != 200:
         raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
@@ -233,7 +233,7 @@ def get_cash_flow_statement(ticker: str, end_date: str, period: str = "Quarter")
 
 
 def get_income_statement(ticker: str, end_date: str, period: str = "Quarter") -> list[IncomeStatement]:
-    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60income_statement%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3E+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
+    balance_sheet_api = f'https://www.dolthub.com/api/v1alpha1/post-no-preference/earnings/master?q=SELECT+*%0AFROM+%60income_statement%60%0AWHERE+act_symbol+%3D+%27{ticker}%27+and+period+%3D+%27{period}%27+and+date+%3C+%27{end_date}%27%0AORDER+BY+%60date%60+DESC%0ALIMIT+100%3B%0A'
     response = _make_api_request(balance_sheet_api, headers={})
     if response.status_code != 200:
         raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
