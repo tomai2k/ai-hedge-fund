@@ -123,11 +123,11 @@ class AlphaVantageCompanyNews(BaseModel):
     title: str
     url: str
     time_published: str
-    authors: list[str]
+    authors: list[str] = []  # Make optional with default empty list
     source: str
-    overall_sentiment_score: float
-    overall_sentiment_label: str
-    ticker_sentiments: list[AlphaVantageTickerSentiment]
+    overall_sentiment_score: float | None = None  # Make optional
+    overall_sentiment_label: str | None = None  # Make optional
+    ticker_sentiments: list[AlphaVantageTickerSentiment] = []  # Make optional with default empty list
 
 class AlphaVantageCompanyNewsResponse(BaseModel):
     items: str

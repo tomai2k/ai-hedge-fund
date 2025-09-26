@@ -32,7 +32,7 @@ from datetime import timedelta, datetime
 # Global cache instance
 _cache = get_cache()
 
-DBPATH = 'sqlite:///../trading/history.db'
+DBPATH = 'sqlite:////home/tao/dev//trading/history.db'
 
 def _get_ticker_daily_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
     """Get ticker daily data from the database."""
@@ -137,7 +137,7 @@ def get_balance_sheet_assets(ticker: str, end_date: str, period: str = "Quarter"
         except Exception as e:
             print(f"Warning: Failed to parse row {row.get('date', 'unknown')}: {e}")
             continue
-    
+    #print(balance_sheet_assets)
     return balance_sheet_assets
 
 
@@ -167,7 +167,7 @@ def get_balance_sheet_equity(ticker: str, end_date: str, period: str = "Quarter"
         except Exception as e:
             print(f"Warning: Failed to parse row {row.get('date', 'unknown')}: {e}")
             continue
-    
+    #print(balance_sheet_equity)
     return balance_sheet_equity
 
 
@@ -197,7 +197,7 @@ def get_balance_sheet_liabilities(ticker: str, end_date: str, period: str = "Qua
         except Exception as e:
             print(f"Warning: Failed to parse row {row.get('date', 'unknown')}: {e}")
             continue
-    
+    #print(balance_sheet_liabilities)
     return balance_sheet_liabilities
 
 
@@ -228,7 +228,7 @@ def get_cash_flow_statement(ticker: str, end_date: str, period: str = "Quarter")
         except Exception as e:
             print(f"Warning: Failed to parse row {row.get('date', 'unknown')}: {e}")
             continue
-    
+    #print(cash_flow_statement)
     return cash_flow_statement
 
 
@@ -258,7 +258,7 @@ def get_income_statement(ticker: str, end_date: str, period: str = "Quarter") ->
         except Exception as e:
             print(f"Warning: Failed to parse row {row.get('date', 'unknown')}: {e}")
             continue
-    
+    #print(income_statement)
     return income_statement
 
 
@@ -283,19 +283,100 @@ def get_financial_metrics(
     else:
         period = "Year"
 
-    balance_sheet_assets = get_balance_sheet_assets(ticker, end_date, period)
-    balance_sheet_equity = get_balance_sheet_equity(ticker, end_date, period)
-    balance_sheet_liabilities = get_balance_sheet_liabilities(ticker, end_date, period)
-    cash_flow_statement = get_cash_flow_statement(ticker, end_date, period)
-    income_statement = get_income_statement(ticker, end_date, period)
+    # Fetch financial statement data (returns lists of records by date DESC)
+    balance_sheet_assets_list = get_balance_sheet_assets(ticker, end_date, period)
+    balance_sheet_equity_list = get_balance_sheet_equity(ticker, end_date, period)
+    balance_sheet_liabilities_list = get_balance_sheet_liabilities(ticker, end_date, period)
+    cash_flow_statement_list = get_cash_flow_statement(ticker, end_date, period)
+    income_statement_list = get_income_statement(ticker, end_date, period)
 
-    financial_metrics = FinancialMetricsCalculator.calculate_metrics(
-        ticker,
-        balance_sheet_assets,
-        balance_sheet_equity,
-        balance_sheet_liabilities,
-        cash_flow_statement,
-        income_statement)
+    if (not balance_sheet_assets_list or not balance_sheet_equity_list or 
+        not balance_sheet_liabilities_list or not cash_flow_statement_list or 
+        not income_statement_list):
+        return []
+
+    # Create dictionaries for quick date-based lookup
+    assets_by_date = {asset.date: asset for asset in balance_sheet_assets_list}
+    equity_by_date = {equity.date: equity for equity in balance_sheet_equity_list}
+    liabilities_by_date = {liability.date: liability for liability in balance_sheet_liabilities_list}
+    cash_flow_by_date = {cf.date: cf for cf in cash_flow_statement_list}
+    income_by_date = {income.date: income for income in income_statement_list}
+    
+    # Find common dates across all statements (intersection)
+    all_dates = (set(assets_by_date.keys()) & set(equity_by_date.keys()) & 
+                set(liabilities_by_date.keys()) & set(cash_flow_by_date.keys()) & 
+                set(income_by_date.keys()))
+    
+    if not all_dates:
+        return []
+    
+    # Sort dates in descending order and limit to requested number
+    sorted_dates = sorted(all_dates, reverse=True)[:limit]
+    
+    financial_metrics = []
+    
+    for i, date in enumerate(sorted_dates):
+        try:
+            # Get market price for this date
+            try:
+                prices = get_prices(ticker, date, date, api_key=api_key)
+                if not prices:
+                    # Try nearby dates
+                    from datetime import datetime, timedelta
+                    date_dt = datetime.strptime(date, '%Y-%m-%d')
+                    for j in range(1, 8):
+                        prev_date = (date_dt - timedelta(days=j)).strftime('%Y-%m-%d')
+                        prices = get_prices(ticker, prev_date, prev_date, api_key=api_key)
+                        if prices:
+                            break
+                
+                market_price = prices[0].close if prices else 100.0
+            except Exception as e:
+                market_price = 100.0  # Fallback
+            
+            # Get financial statement data for this date
+            assets = assets_by_date[date]
+            equity = equity_by_date[date] 
+            liabilities = liabilities_by_date[date]
+            cash_flow = cash_flow_by_date[date]
+            income = income_by_date[date]
+            
+            # Try to get previous year data for growth calculations
+            previous_period_income = None
+            previous_period_equity = None
+            previous_period_cash_flow = None
+            
+            try:
+                from datetime import datetime
+                current_dt = datetime.strptime(date, '%Y-%m-%d')
+                prev_year_dt = current_dt.replace(year=current_dt.year - 1)
+                prev_year_date = prev_year_dt.strftime('%Y-%m-%d')
+                
+                previous_period_income = income_by_date.get(prev_year_date)
+                previous_period_equity = equity_by_date.get(prev_year_date)
+                previous_period_cash_flow = cash_flow_by_date.get(prev_year_date)
+            except:
+                pass  # No historical data available
+            
+            # Create calculator and compute metrics
+            calculator = FinancialMetricsCalculator(market_price=market_price)
+            financial_metric = calculator.calculate_metrics(
+                ticker=ticker,
+                assets=assets,
+                equity=equity,
+                liabilities=liabilities,
+                cash_flow=cash_flow,
+                income=income,
+                previous_period_income=previous_period_income,
+                previous_period_equity=previous_period_equity,
+                previous_period_cash_flow=previous_period_cash_flow
+            )
+            
+            financial_metrics.append(financial_metric)
+            
+        except Exception as e:
+            print(f"Warning: Failed to calculate metrics for {date}: {e}")
+            continue
 
     if not financial_metrics:
         return []
@@ -306,6 +387,330 @@ def get_financial_metrics(
 
 
 def search_line_items(
+    ticker: str,
+    line_items: list[str],
+    end_date: str,
+    period: str = "ttm",
+    limit: int = 10,
+    api_key: str = None,
+) -> list[LineItem]:
+    """Fetch line items from local model classes instead of external API."""
+    
+    # Convert period format
+    if period == "ttm":
+        period_query = "Quarter"
+    else:
+        period_query = "Year"
+    
+    try:
+        # Fetch financial statement data
+        balance_sheet_assets_list = get_balance_sheet_assets(ticker, end_date, period_query)
+        balance_sheet_equity_list = get_balance_sheet_equity(ticker, end_date, period_query)
+        balance_sheet_liabilities_list = get_balance_sheet_liabilities(ticker, end_date, period_query)
+        cash_flow_statement_list = get_cash_flow_statement(ticker, end_date, period_query)
+        income_statement_list = get_income_statement(ticker, end_date, period_query)
+        
+        if not any([balance_sheet_assets_list, balance_sheet_equity_list, 
+                   balance_sheet_liabilities_list, cash_flow_statement_list, income_statement_list]):
+            return []
+        
+        # Create dictionaries for quick date-based lookup
+        assets_by_date = {asset.date: asset for asset in balance_sheet_assets_list}
+        equity_by_date = {equity.date: equity for equity in balance_sheet_equity_list}
+        liabilities_by_date = {liability.date: liability for liability in balance_sheet_liabilities_list}
+        cash_flow_by_date = {cf.date: cf for cf in cash_flow_statement_list}
+        income_by_date = {income.date: income for income in income_statement_list}
+        
+        # Find common dates across all statements
+        all_dates = set()
+        if assets_by_date: all_dates.update(assets_by_date.keys())
+        if equity_by_date: all_dates.update(equity_by_date.keys()) 
+        if liabilities_by_date: all_dates.update(liabilities_by_date.keys())
+        if cash_flow_by_date: all_dates.update(cash_flow_by_date.keys())
+        if income_by_date: all_dates.update(income_by_date.keys())
+        
+        if not all_dates:
+            return []
+        
+        # Sort dates in descending order and limit
+        sorted_dates = sorted(all_dates, reverse=True)[:limit]
+        
+        results = []
+        for date in sorted_dates:
+            # Get statements for this date
+            assets = assets_by_date.get(date)
+            equity = equity_by_date.get(date)
+            liabilities = liabilities_by_date.get(date)
+            cash_flow = cash_flow_by_date.get(date)
+            income = income_by_date.get(date)
+            
+            # Create LineItem with base fields
+            line_item_data = {
+                "ticker": ticker,
+                "report_period": date,
+                "period": period,
+                "currency": "USD"  # Default assumption
+            }
+            
+            # Extract requested line items
+            for line_item in line_items:
+                value = _extract_line_item_value(line_item, assets, equity, liabilities, cash_flow, income)
+                if value is not None:
+                    line_item_data[line_item] = value
+            
+            # Create LineItem object (allows extra fields)
+            line_item = LineItem(**line_item_data)
+            results.append(line_item)
+        
+        return results
+        
+    except Exception as e:
+        print(f"Error in search_line_items_new: {e}")
+        return []
+
+
+def _extract_line_item_value(
+    line_item: str,
+    assets: 'BalanceSheetAssets' = None,
+    equity: 'BalanceSheetEquity' = None, 
+    liabilities: 'BalanceSheetLiabilities' = None,
+    cash_flow: 'CashFlowStatement' = None,
+    income: 'IncomeStatement' = None
+) -> float | None:
+    """Extract a specific line item value from financial statement models."""
+    
+    # Direct field mappings
+    field_mappings = {
+        # Balance Sheet Assets
+        "cash_and_equivalents": ("assets", "cash_and_equivalents"),
+        "total_assets": ("assets", "total_assets"),
+        "current_assets": ("assets", "total_current_assets"),
+        "goodwill_and_intangible_assets": ("assets", "intangibles"),
+        
+        # Balance Sheet Equity
+        "book_value_per_share": ("equity", "book_value_per_share"),
+        "outstanding_shares": ("equity", "shares_outstanding"),
+        "shareholders_equity": ("equity", "total_equity"),
+        
+        # Balance Sheet Liabilities
+        "total_liabilities": ("liabilities", "total_liabilities"),
+        "current_liabilities": ("liabilities", "total_current_liabilities"),
+        
+        # Cash Flow Statement
+        "net_income": ("cash_flow", "net_income"),
+        "depreciation_and_amortization": ("cash_flow", "depreciation_amortization_and_depletion"),
+        "dividends_and_other_cash_distributions": ("cash_flow", "payment_of_dividends_and_other_distributions"),
+        "issuance_or_purchase_of_equity_shares": ("cash_flow", "issuance_of_capital_stock"),
+        
+        # Income Statement  
+        "revenue": ("income", "sales"),
+        "gross_profit": ("income", "gross_profit"),
+        "interest_expense": ("income", "interest_expense"),
+    }
+    
+    # Check if it's a direct field mapping
+    if line_item in field_mappings:
+        model_name, field_name = field_mappings[line_item]
+        model = locals().get(model_name)
+        if model and hasattr(model, field_name):
+            return getattr(model, field_name)
+    
+    # Handle calculated fields
+    if line_item == "total_debt":
+        return _calculate_total_debt(liabilities)
+    elif line_item == "working_capital":
+        return _calculate_working_capital(assets, liabilities)
+    elif line_item == "capital_expenditure":
+        return _calculate_capital_expenditure(cash_flow)
+    elif line_item == "free_cash_flow":
+        return _calculate_free_cash_flow(cash_flow)
+    elif line_item == "operating_income":
+        return _calculate_operating_income(income)
+    elif line_item == "operating_expense":
+        return _calculate_operating_expense(income)
+    elif line_item == "ebit":
+        return _calculate_ebit(income)
+    elif line_item == "ebitda":
+        return _calculate_ebitda(income)
+    elif line_item == "earnings_per_share":
+        return _calculate_earnings_per_share(income, equity)
+    elif line_item == "gross_margin":
+        return _calculate_gross_margin(income)
+    elif line_item == "operating_margin":
+        return _calculate_operating_margin(income)
+    elif line_item == "debt_to_equity":
+        return _calculate_debt_to_equity(liabilities, equity)
+    
+    # Also check for net_income in income statement as fallback
+    if line_item == "net_income" and income and hasattr(income, "net_income"):
+        return getattr(income, "net_income")
+    
+    return None
+
+
+def _calculate_total_debt(liabilities: 'BalanceSheetLiabilities' = None) -> float | None:
+    """Calculate total debt from balance sheet liabilities."""
+    if not liabilities:
+        return None
+    
+    debt_components = [
+        liabilities.notes_payable or 0,
+        liabilities.current_portion_long_term_debt or 0,
+        liabilities.long_term_debt or 0,
+        liabilities.convertible_debt or 0
+    ]
+    
+    return sum(debt_components) if any(debt_components) else None
+
+
+def _calculate_working_capital(assets: 'BalanceSheetAssets' = None, liabilities: 'BalanceSheetLiabilities' = None) -> float | None:
+    """Calculate working capital = current assets - current liabilities."""
+    if not assets or not liabilities:
+        return None
+    
+    current_assets = assets.total_current_assets
+    current_liabs = liabilities.total_current_liabilities
+    
+    if current_assets is not None and current_liabs is not None:
+        return current_assets - current_liabs
+    return None
+
+
+def _calculate_capital_expenditure(cash_flow: 'CashFlowStatement' = None) -> float | None:
+    """Calculate capital expenditure from cash flow statement."""
+    if not cash_flow:
+        return None
+    
+    # Property and equipment investments are usually negative (outflows)
+    return abs(cash_flow.property_and_equipment) if cash_flow.property_and_equipment else None
+
+
+def _calculate_free_cash_flow(cash_flow: 'CashFlowStatement' = None) -> float | None:
+    """Calculate free cash flow = operating cash flow - capital expenditures."""
+    if not cash_flow:
+        return None
+    
+    operating_cf = cash_flow.net_cash_from_operating_activities
+    capex = abs(cash_flow.property_and_equipment or 0)
+    
+    if operating_cf is not None:
+        return operating_cf - capex
+    return None
+
+
+def _calculate_operating_income(income: 'IncomeStatement' = None) -> float | None:
+    """Calculate operating income."""
+    if not income:
+        return None
+    
+    # Try income_after_depreciation_and_amortization first
+    if income.income_after_depreciation_and_amortization is not None:
+        return income.income_after_depreciation_and_amortization
+    
+    # Fallback: gross_profit - operating expenses
+    gross_profit = income.gross_profit
+    operating_expenses = income.selling_administrative_depreciation_amortization_expenses
+    
+    if gross_profit is not None and operating_expenses is not None:
+        return gross_profit - operating_expenses
+    
+    return None
+
+
+def _calculate_operating_expense(income: 'IncomeStatement' = None) -> float | None:
+    """Calculate operating expenses."""
+    if not income:
+        return None
+    
+    return income.selling_administrative_depreciation_amortization_expenses
+
+
+def _calculate_ebit(income: 'IncomeStatement' = None) -> float | None:
+    """Calculate EBIT = Net Income + Interest + Taxes."""
+    if not income:
+        return None
+    
+    net_income = income.net_income
+    interest_expense = income.interest_expense or 0
+    income_taxes = income.income_taxes or 0
+    
+    if net_income is not None:
+        return net_income + interest_expense + income_taxes
+    
+    return None
+
+
+def _calculate_ebitda(income: 'IncomeStatement' = None) -> float | None:
+    """Calculate EBITDA = EBIT + Depreciation & Amortization."""
+    if not income:
+        return None
+    
+    ebit = _calculate_ebit(income)
+    depreciation = income.depreciation_and_amortization or 0
+    
+    if ebit is not None:
+        return ebit + depreciation
+    
+    return None
+
+
+def _calculate_earnings_per_share(income: 'IncomeStatement' = None, equity: 'BalanceSheetEquity' = None) -> float | None:
+    """Calculate earnings per share = net income / shares outstanding."""
+    if not income or not equity:
+        return None
+    
+    net_income = income.net_income
+    shares = equity.shares_outstanding
+    
+    if net_income is not None and shares is not None and shares > 0:
+        return net_income / shares
+    
+    return None
+
+
+def _calculate_gross_margin(income: 'IncomeStatement' = None) -> float | None:
+    """Calculate gross margin = gross profit / revenue."""
+    if not income:
+        return None
+    
+    gross_profit = income.gross_profit
+    sales = income.sales
+    
+    if gross_profit is not None and sales is not None and sales > 0:
+        return gross_profit / sales
+    
+    return None
+
+
+def _calculate_operating_margin(income: 'IncomeStatement' = None) -> float | None:
+    """Calculate operating margin = operating income / revenue."""
+    if not income:
+        return None
+    
+    operating_income = _calculate_operating_income(income)
+    sales = income.sales
+    
+    if operating_income is not None and sales is not None and sales > 0:
+        return operating_income / sales
+    
+    return None
+
+
+def _calculate_debt_to_equity(liabilities: 'BalanceSheetLiabilities' = None, equity: 'BalanceSheetEquity' = None) -> float | None:
+    """Calculate debt to equity ratio = total debt / total equity."""
+    if not liabilities or not equity:
+        return None
+    
+    total_debt = _calculate_total_debt(liabilities)
+    total_equity = equity.total_equity
+    
+    if total_debt is not None and total_equity is not None and total_equity > 0:
+        return total_debt / total_equity
+    
+    return None
+
+
+def search_line_items_old(
     ticker: str,
     line_items: list[str],
     end_date: str,
@@ -367,8 +772,27 @@ def get_insider_trades(
         raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
 
     data = response.json()
+    
+    # Check for Alpha Vantage API error responses
+    if "Information" in data:
+        print(f"Alpha Vantage API Error: {data['Information']}")
+        return []  # Return empty list for API errors
+    
+    if "Error Message" in data:
+        print(f"Alpha Vantage API Error: {data['Error Message']}")
+        return []  # Return empty list for API errors
+        
+    # Check for rate limit messages
+    if "Note" in data and "API call frequency" in str(data.get("Note", "")):
+        print(f"Alpha Vantage Rate Limit: {data['Note']}")
+        return []  # Return empty list for rate limits
+    
+    # Check if data field exists
+    if "data" not in data:
+        print(f"Expected 'data' field not found in Alpha Vantage response. Keys: {list(data.keys())}")
+        return []
+    
     trades = data['data']
-    print("got data", trades)
     if not trades:
         return []
     # Convert the raw data to InsiderTrade objects with field mapping
@@ -416,11 +840,12 @@ def get_company_news(
     """Fetch company news from cache or API."""
     # Convert start_date from YYYY-MM-DD to YYYYMMDDTHHMM format with HHMM=0000
     formatted_start_date = None
+    formatted_end_date = None
     if start_date:
         # Parse YYYY-MM-DD format and convert to YYYYMMDDTHHMM
         formatted_start_date = datetime.strptime(start_date, "%Y-%m-%d").strftime("%Y%m%dT0000")
-    if len(end_date) > 0:
-        formatted_end_date = datetime.strptime(end_date, "%Y-%m-%d").strftime("%Y%m%dT0000")
+        if len(end_date) > 0:
+            formatted_end_date = datetime.strptime(end_date, "%Y-%m-%d").strftime("%Y%m%dT0000")
     
     # Create a cache key that includes all parameters to ensure exact matches
     cache_key = f"{ticker}_{start_date or 'none'}_{end_date}_{limit}"
@@ -443,32 +868,66 @@ def get_company_news(
         raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
 
     data = response.json()
-    alpha_response = AlphaVantageCompanyNewsResponse(**data)
+    
+    # Check for Alpha Vantage API error responses
+    if "Information" in data:
+        print(f"Alpha Vantage API Error: {data['Information']}")
+        return []  # Return empty list for API errors
+    
+    if "Error Message" in data:
+        print(f"Alpha Vantage API Error: {data['Error Message']}")
+        return []  # Return empty list for API errors
+        
+    # Check for rate limit messages
+    if "Note" in data and "API call frequency" in str(data.get("Note", "")):
+        print(f"Alpha Vantage Rate Limit: {data['Note']}")
+        return []  # Return empty list for rate limits
+    
+    try:
+        alpha_response = AlphaVantageCompanyNewsResponse(**data)
+    except Exception as e:
+        print(f"Error parsing Alpha Vantage response: {e}")
+        print(f"Response data keys: {list(data.keys())}")
+        if "feed" in data and len(data["feed"]) > 0:
+            print(f"First feed item keys: {list(data['feed'][0].keys())}")
+            print(f"Sample feed item: {data['feed'][0]}")
+        return []  # Return empty list for parsing errors
     
     # Convert AlphaVantage news to CompanyNews format
     all_news = []
     for news_item in alpha_response.feed:
         # Find the ticker sentiment that matches our requested ticker
         matching_ticker_sentiment = None
-        for ticker_sentiment in news_item.ticker_sentiments:
-            if ticker_sentiment.ticker == ticker:
-                matching_ticker_sentiment = ticker_sentiment
-                break
+        if news_item.ticker_sentiments:  # Check if ticker_sentiments is not empty
+            for ticker_sentiment in news_item.ticker_sentiments:
+                if ticker_sentiment.ticker == ticker:
+                    matching_ticker_sentiment = ticker_sentiment
+                    break
         
-        # Only include news items that mention our ticker
+        # Include news items even if no specific ticker sentiment is found
+        # Use overall sentiment as fallback
+        sentiment = None
         if matching_ticker_sentiment:
-            converted_news = CompanyNews(
-                ticker=ticker,
-                title=news_item.title,
-                author=news_item.authors[0], # Use the first author as the author
-                source=news_item.source,
-                date=news_item.time_published,
-                url=news_item.url,
-                sentiment=matching_ticker_sentiment.ticker_sentiment_label
-            )
-            all_news.append(converted_news)
+            sentiment = matching_ticker_sentiment.ticker_sentiment_label
+        elif news_item.overall_sentiment_label:
+            sentiment = news_item.overall_sentiment_label
+        
+        # Get author safely
+        author = news_item.authors[0] if news_item.authors else "Unknown"
+        
+        converted_news = CompanyNews(
+            ticker=ticker,
+            title=news_item.title,
+            author=author,
+            source=news_item.source,
+            date=news_item.time_published,
+            url=news_item.url,
+            sentiment=sentiment
+        )
+        all_news.append(converted_news)
 
     if not all_news:
+        print("No news found")
         return []
 
     # Cache the results using the comprehensive cache key
@@ -477,46 +936,60 @@ def get_company_news(
 
 
 def _get_balance_sheet_equity_data(ticker: str, target_date: str) -> BalanceSheetEquity | None:
-    """Load balance sheet equity data from CSV file."""
+    """Load balance sheet equity data from API."""
     try:
-        # Construct CSV file path based on ticker (assuming naming convention)
-        csv_path = f"src/data/balance_sheet_equity_{ticker.lower()}.csv"
-        if not os.path.exists(csv_path):
-            print(f"Balance sheet equity CSV not found: {csv_path}")
-            return None
-        
-        equity_df = pd.read_csv(csv_path)
-        
-        # Find the closest date match (prefer exact match, then most recent before target_date)
+        # Convert target_date to datetime for comparison
         target_dt = datetime.strptime(target_date, '%Y-%m-%d')
         
-        # Filter for quarterly data first, then try any period
-        quarterly_data = equity_df[equity_df['period'] == 'Quarter'].copy()
-        if not quarterly_data.empty:
-            quarterly_data['date_dt'] = pd.to_datetime(quarterly_data['date'])
-            # Find exact match first
-            exact_match = quarterly_data[quarterly_data['date'] == target_date]
-            if not exact_match.empty:
-                return BalanceSheetEquity(**exact_match.iloc[0].to_dict())
-            
-            # Find most recent date before target_date
-            before_target = quarterly_data[quarterly_data['date_dt'] <= target_dt]
-            if not before_target.empty:
-                latest_row = before_target.loc[before_target['date_dt'].idxmax()]
-                return BalanceSheetEquity(**latest_row.to_dict())
+        # Try quarterly data first (most common case)
+        try:
+            quarterly_equity = get_balance_sheet_equity(ticker, target_date, period="Quarter")
+            if quarterly_equity:
+                # Find the best match from quarterly data
+                best_match = _find_closest_equity_data(quarterly_equity, target_dt)
+                if best_match:
+                    return best_match
+        except Exception as e:
+            print(f"Error fetching quarterly balance sheet equity for {ticker}: {e}")
         
-        # Fallback to any available data
-        if not equity_df.empty:
-            equity_df['date_dt'] = pd.to_datetime(equity_df['date'])
-            before_target = equity_df[equity_df['date_dt'] <= target_dt]
-            if not before_target.empty:
-                latest_row = before_target.loc[before_target['date_dt'].idxmax()]
-                return BalanceSheetEquity(**latest_row.to_dict())
+        # Fallback to annual data if quarterly not available
+        try:
+            annual_equity = get_balance_sheet_equity(ticker, target_date, period="Year")
+            if annual_equity:
+                # Find the best match from annual data
+                best_match = _find_closest_equity_data(annual_equity, target_dt)
+                if best_match:
+                    return best_match
+        except Exception as e:
+            print(f"Error fetching annual balance sheet equity for {ticker}: {e}")
         
         return None
     except Exception as e:
-        print(f"Error loading balance sheet equity data: {e}")
+        print(f"Error loading balance sheet equity data for {ticker}: {e}")
         return None
+
+
+def _find_closest_equity_data(equity_list: list[BalanceSheetEquity], target_dt: datetime) -> BalanceSheetEquity | None:
+    """Find the closest balance sheet equity data to the target date (before or on target date)."""
+    if not equity_list:
+        return None
+    
+    # Filter for dates on or before target date
+    valid_entries = []
+    for equity in equity_list:
+        try:
+            equity_dt = datetime.strptime(equity.date, '%Y-%m-%d')
+            if equity_dt <= target_dt:
+                valid_entries.append((equity, equity_dt))
+        except Exception:
+            continue  # Skip entries with invalid dates
+    
+    if not valid_entries:
+        return None
+    
+    # Sort by date descending and return the most recent one
+    valid_entries.sort(key=lambda x: x[1], reverse=True)
+    return valid_entries[0][0]
 
 
 def get_market_cap(

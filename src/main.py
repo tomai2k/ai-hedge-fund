@@ -56,12 +56,9 @@ def run_hedge_fund(
     progress.start()
 
     try:
-        # Create a new workflow if analysts are customized
-        if selected_analysts:
-            workflow = create_workflow(selected_analysts)
-            agent = workflow.compile()
-        else:
-            agent = app
+        # Create workflow (with selected analysts or default to all)
+        workflow = create_workflow(selected_analysts)
+        agent = workflow.compile()
 
         final_state = agent.invoke(
             {
