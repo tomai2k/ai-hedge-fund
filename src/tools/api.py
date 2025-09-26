@@ -457,6 +457,8 @@ def search_line_items(
                 value = _extract_line_item_value(line_item, assets, equity, liabilities, cash_flow, income)
                 if value is not None:
                     line_item_data[line_item] = value
+                elif line_item == "research_and_development":
+                    line_item_data[line_item] = None
             
             # Create LineItem object (allows extra fields)
             line_item = LineItem(**line_item_data)
@@ -540,6 +542,9 @@ def _extract_line_item_value(
         return _calculate_operating_margin(income)
     elif line_item == "debt_to_equity":
         return _calculate_debt_to_equity(liabilities, equity)
+    elif line_item == "research_and_development":
+        # TODO: implement this
+        return None
     
     # Also check for net_income in income statement as fallback
     if line_item == "net_income" and income and hasattr(income, "net_income"):
