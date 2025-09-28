@@ -1,4 +1,5 @@
 import datetime
+import logging
 import os
 import pandas as pd
 import requests
@@ -86,14 +87,7 @@ def _make_api_request(url: str, headers: dict, method: str = "GET", json_data: d
 
 
 def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None) -> list[Price]:
-    """Fetch price data from cache or API."""
-    # Create a cache key that includes all parameters to ensure exact matches
-    cache_key = f"{ticker}_{start_date}_{end_date}"
-    
-    # Check cache first - simple exact match
-    if cached_data := _cache.get_prices(cache_key):
-        return [Price(**price) for price in cached_data]
-
+    """Fetch price data from database (no caching)."""
     # Check if data is already in the database
     df = _get_ticker_daily_data(ticker, start_date, end_date)
     if not df.empty:
@@ -103,7 +97,6 @@ def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None)
         df = df.rename(columns={'Date': 'time', 'Open': 'open', 'Close': 'close', 'High': 'high', 'Low': 'low', 'Volume': 'volume'})
         prices_dict = df.to_dict(orient="records")
         prices = [Price(**price) for price in prices_dict]
-        _cache.set_prices(cache_key, [p.model_dump() for p in prices])
         return prices
 
     return []
@@ -444,6 +437,10 @@ def search_line_items(
             cash_flow = cash_flow_by_date.get(date)
             income = income_by_date.get(date)
             
+            # Skip dates where we have no data at all
+            if not any([assets, equity, liabilities, cash_flow, income]):
+                continue
+            
             # Create LineItem with base fields
             line_item_data = {
                 "ticker": ticker,
@@ -459,6 +456,17 @@ def search_line_items(
                     line_item_data[line_item] = value
                 elif line_item == "research_and_development":
                     line_item_data[line_item] = None
+                else:
+                    # Debug: Log when we can't extract a line item
+                    missing_statements = []
+                    if not assets: missing_statements.append("assets")
+                    if not equity: missing_statements.append("equity") 
+                    if not liabilities: missing_statements.append("liabilities")
+                    if not cash_flow: missing_statements.append("cash_flow")
+                    if not income: missing_statements.append("income")
+                    
+                    if missing_statements:
+                        logging.warning(f"Could not extract '{line_item}' for {ticker} on {date}. Missing: {', '.join(missing_statements)}")
             
             # Create LineItem object (allows extra fields)
             line_item = LineItem(**line_item_data)
@@ -769,6 +777,9 @@ def get_insider_trades(
     if cached_data := _cache.get_insider_trades(cache_key):
         return [InsiderTrade(**trade) for trade in cached_data]
 
+    # Record cache miss since we need to fetch from API
+    _cache.record_cache_miss('get_insider_trades', cache_key)
+
     # If not in cache, fetch from API
     current_end_date = end_date
 
@@ -859,6 +870,9 @@ def get_company_news(
     # Check cache first - simple exact match
     if cached_data := _cache.get_company_news(cache_key):
         return [CompanyNews(**news) for news in cached_data]
+
+    # Record cache miss since we need to fetch from API
+    _cache.record_cache_miss('get_company_news', cache_key)
 
     # If not in cache, fetch from API
     # Build URL for AlphaVantage NEWS_SENTIMENT API
