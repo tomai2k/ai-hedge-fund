@@ -1,9 +1,12 @@
 import datetime
 import logging
+import json
 import os
 import pandas as pd
 import requests
 import time
+
+from dateutil.relativedelta import relativedelta
 
 from src.data.cache import get_cache
 from src.data.models import (
@@ -451,11 +454,12 @@ def search_line_items(
             
             # Extract requested line items
             for line_item in line_items:
-                value = _extract_line_item_value(line_item, assets, equity, liabilities, cash_flow, income)
+                if line_item == "research_and_development":
+                    value = get_research_n_development(ticker, date, period)
+                else:
+                    value = _extract_line_item_value(line_item, assets, equity, liabilities, cash_flow, income)
                 if value is not None:
                     line_item_data[line_item] = value
-                elif line_item == "research_and_development":
-                    line_item_data[line_item] = None
                 else:
                     # Debug: Log when we can't extract a line item
                     missing_statements = []
@@ -464,7 +468,7 @@ def search_line_items(
                     if not liabilities: missing_statements.append("liabilities")
                     if not cash_flow: missing_statements.append("cash_flow")
                     if not income: missing_statements.append("income")
-                    
+
                     if missing_statements:
                         logging.warning(f"Could not extract '{line_item}' for {ticker} on {date}. Missing: {', '.join(missing_statements)}")
             
@@ -759,8 +763,8 @@ def search_line_items_old(
     # Cache the results
     return search_results[:limit]
 
-#APIKEY='FK8PO265QYZSBYE1'
-APIKEY='9WMF23D283DZS5CK'
+APIKEY='FK8PO265QYZSBYE1'
+#APIKEY='9WMF23D283DZS5CK'
 
 def get_insider_trades(
     ticker: str,
@@ -1065,6 +1069,114 @@ def get_market_cap(
         print(f"Error calculating market cap for {ticker}: {e}")
         return None
 
+def get_cik_from_ticker(ticker: str) -> str:
+    ticker = ticker.upper()
+
+    mapping = json.load(open("/home/tao/dev/ai-hedge-fund/src/data/company_tickers.json"))
+
+    for _, info in mapping.items():
+        if info["ticker"] == ticker:
+            return str(info["cik_str"]).zfill(10)  # zero-pad to 10 digits
+    return None
+
+
+def get_research_n_development(
+    ticker: str,
+    end_date: str,
+    period: str = "Quarter",
+) -> float | None:
+    """Get research and development from SEC filings."""
+
+    cik = get_cik_from_ticker(ticker)
+    if not cik:
+        return None
+
+    # SEC company facts endpoint
+    url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+
+    headers = {
+        "User-Agent": "tomw@sina.com"  # REQUIRED by SEC
+    }
+
+    resp = requests.get(url, headers=headers)
+    data = resp.json()
+
+    # R&D is usually under US GAAP tag: ResearchAndDevelopmentExpense
+    try:
+        rd_data = data["facts"]["us-gaap"]["ResearchAndDevelopmentExpense"]["units"]["USD"]
+    except Exception as e:
+        print(f"Error getting research and development from SEC filings: {e}")
+        return None
+
+    # Check for entries with approximately 3-month periods
+    
+    quarterly_entries = []
+    
+    for entry in sorted(rd_data, key=lambda x: x["start"], reverse=True)[:5]:
+        start_date = datetime.strptime(entry["start"], "%Y-%m-%d")
+        end_date = datetime.strptime(entry["end"], "%Y-%m-%d")
+        
+        # Calculate expected end date if it were exactly 3 months
+        expected_end = start_date + relativedelta(months=3)
+        
+        # Check if the actual period is approximately 3 months (within 7 days tolerance)
+        days_diff = abs((end_date - expected_end).days)
+        
+        if days_diff <= 7:  # 3 months with some tolerance
+            quarterly_entries.append(entry)
+            #print(f"3-Month Period Found: {entry['start']} to {entry['end']}, "
+            #    f"Value: {entry['val']:,} USD")
+        else:
+            pass
+            #print(f"Period: {entry['start']} to {entry['end']}, "
+            #    f"Value: {entry['val']:,} USD")
+    
+    # Return the first 3-month entry if found, otherwise return the first entry
+    if quarterly_entries:
+        #print(f"\nReturning 3-month period entry: {quarterly_entries[0]['start']} to {quarterly_entries[0]['end']}")
+        return quarterly_entries[0]["val"]
+    else:
+        print(f"\nNo 3-month periods found, returning first entry: {rd_data[0]['start']} to {rd_data[0]['end']}")
+        return rd_data[0]["val"]
+    # Period: 2025-03-30 to 2025-06-28, Value: 8,866,000,000 USD
+    # Period: 2024-12-29 to 2025-03-29, Value: 8,550,000,000 USD
+    # Period: 2024-09-29 to 2024-12-28, Value: 8,268,000,000 USD
+    # Period: 2024-09-29 to 2025-03-29, Value: 16,818,000,000 USD
+    # Period: 2024-09-29 to 2025-06-28, Value: 25,684,000,000 USD
+    # Period: 2024-03-31 to 2024-06-29, Value: 8,006,000,000 USD
+    # Period: 2024-03-31 to 2024-06-29, Value: 8,006,000,000 USD
+    # Period: 2023-12-31 to 2024-03-30, Value: 7,903,000,000 USD
+    # Period: 2023-12-31 to 2024-03-30, Value: 7,903,000,000 USD
+    # Period: 2023-10-01 to 2023-12-30, Value: 7,696,000,000 USD
+    # Period: 2023-10-01 to 2023-12-30, Value: 7,696,000,000 USD
+    # Period: 2023-10-01 to 2024-03-30, Value: 15,599,000,000 USD
+    # Period: 2023-10-01 to 2024-03-30, Value: 15,599,000,000 USD
+    # Period: 2023-10-01 to 2024-06-29, Value: 23,605,000,000 USD
+    # Period: 2023-10-01 to 2024-06-29, Value: 23,605,000,000 USD
+    # Period: 2023-10-01 to 2024-09-28, Value: 31,370,000,000 USD
+
+    # Print the most recent 16 entries
+    #for entry in sorted(rd_data, key=lambda x: x["end"], reverse=True)[:16]:
+    #    print(f"Period: {entry['start']} to {entry['end']}, "
+    #        f"Value: {entry['val']:,} USD")
+    # example output:
+    # Period: 2024-09-29 to 2025-06-28, Value: 25,684,000,000 USD
+    # Period: 2025-03-30 to 2025-06-28, Value: 8,866,000,000 USD
+    # Period: 2024-09-29 to 2025-03-29, Value: 16,818,000,000 USD
+    # Period: 2024-12-29 to 2025-03-29, Value: 8,550,000,000 USD
+    # Period: 2024-09-29 to 2024-12-28, Value: 8,268,000,000 USD
+    # Period: 2023-10-01 to 2024-09-28, Value: 31,370,000,000 USD
+    # Period: 2023-10-01 to 2024-06-29, Value: 23,605,000,000 USD
+    # Period: 2023-10-01 to 2024-06-29, Value: 23,605,000,000 USD
+    # Period: 2024-03-31 to 2024-06-29, Value: 8,006,000,000 USD
+    # Period: 2024-03-31 to 2024-06-29, Value: 8,006,000,000 USD
+    # Period: 2023-10-01 to 2024-03-30, Value: 15,599,000,000 USD
+    # Period: 2023-10-01 to 2024-03-30, Value: 15,599,000,000 USD
+    # Period: 2023-12-31 to 2024-03-30, Value: 7,903,000,000 USD
+    # Period: 2023-12-31 to 2024-03-30, Value: 7,903,000,000 USD
+    # Period: 2023-10-01 to 2023-12-30, Value: 7,696,000,000 USD
+    # Period: 2023-10-01 to 2023-12-30, Value: 7,696,000,000 USD
+
 
 def prices_to_df(prices: list[Price]) -> pd.DataFrame:
     """Convert prices to a DataFrame."""
@@ -1082,3 +1194,7 @@ def prices_to_df(prices: list[Price]) -> pd.DataFrame:
 def get_price_data(ticker: str, start_date: str, end_date: str, api_key: str = None) -> pd.DataFrame:
     prices = get_prices(ticker, start_date, end_date, api_key=api_key)
     return prices_to_df(prices)
+
+
+if __name__ == "__main__":
+    print(get_research_n_development("AAPL", "2025-09-27"))
