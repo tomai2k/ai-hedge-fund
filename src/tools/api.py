@@ -770,8 +770,19 @@ def get_insider_trades(
     api_key: str = None,
 ) -> list[InsiderTrade]:
     """Fetch insider trades from cache or API."""
+    # Convert start_date from YYYY-MM-DD to YYYYMMDDTHHMM format with HHMM=0000
+    formatted_start_date = None
+    formatted_end_date = None
+    if start_date:
+        # Parse YYYY-MM-DD format and convert to YYYYMMDDTHHMM
+        formatted_start_date = datetime.strptime(start_date, "%Y-%m-%d").strftime("%Y%m%dT0000")
+        if len(end_date) > 0:
+            formatted_end_date = datetime.strptime(end_date, "%Y-%m-%d").strftime("%Y%m%dT0000")
+
+    default_limit = 1000
+
     # Create a cache key that includes all parameters to ensure exact matches
-    cache_key = f"{ticker}_{start_date or 'none'}_{end_date}_{limit}"
+    cache_key = f"{ticker}_{start_date or 'none'}_{end_date}_{default_limit}"
     
     # Check cache first - simple exact match
     if cached_data := _cache.get_insider_trades(cache_key):
@@ -783,32 +794,33 @@ def get_insider_trades(
     # If not in cache, fetch from API
     current_end_date = end_date
 
+    # this endpoint doesn't support start_date and end_date, or limit
     url = f"https://www.alphavantage.co/query?function=INSIDER_TRANSACTIONS&symbol={ticker}&apikey="+APIKEY
     response = _make_api_request(url, headers={})
     if response.status_code != 200:
         raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
 
     data = response.json()
-    
+
     # Check for Alpha Vantage API error responses
     if "Information" in data:
         print(f"Alpha Vantage API Error: {data['Information']}")
         return []  # Return empty list for API errors
-    
+
     if "Error Message" in data:
         print(f"Alpha Vantage API Error: {data['Error Message']}")
         return []  # Return empty list for API errors
-        
+
     # Check for rate limit messages
     if "Note" in data and "API call frequency" in str(data.get("Note", "")):
         print(f"Alpha Vantage Rate Limit: {data['Note']}")
         return []  # Return empty list for rate limits
-    
+
     # Check if data field exists
     if "data" not in data:
         print(f"Expected 'data' field not found in Alpha Vantage response. Keys: {list(data.keys())}")
         return []
-    
+
     trades = data['data']
     if not trades:
         return []
@@ -836,22 +848,20 @@ def get_insider_trades(
                     filing_date=trade_data.get("transaction_date")  # Use transaction_date as filing_date fallback
                 )
         insider_trades.append(insider_trade)
-        if len(insider_trades) >= limit:
-            break
 
     if not insider_trades:
         return []
 
     # Cache the results using the comprehensive cache key
     _cache.set_insider_trades(cache_key, [trade.model_dump() for trade in insider_trades])
-    return insider_trades
+    return insider_trades[:limit]
 
 
 def get_company_news(
     ticker: str,
     end_date: str,
     start_date: str | None = None,
-    limit: int = 1000,
+    limit: int = 250,
     api_key: str = None,
 ) -> list[CompanyNews]:
     """Fetch company news from cache or API."""
@@ -863,9 +873,11 @@ def get_company_news(
         formatted_start_date = datetime.strptime(start_date, "%Y-%m-%d").strftime("%Y%m%dT0000")
         if len(end_date) > 0:
             formatted_end_date = datetime.strptime(end_date, "%Y-%m-%d").strftime("%Y%m%dT0000")
-    
+
+    default_limit = 250
+
     # Create a cache key that includes all parameters to ensure exact matches
-    cache_key = f"{ticker}_{start_date or 'none'}_{end_date}_{limit}"
+    cache_key = f"{ticker}_{start_date or 'none'}_{end_date}_{default_limit}"
     
     # Check cache first - simple exact match
     if cached_data := _cache.get_company_news(cache_key):
@@ -881,7 +893,8 @@ def get_company_news(
         url += f"&time_from={formatted_start_date}"
     if formatted_end_date:
         url += f"&time_to={formatted_end_date}"
-    url += f"&limit={limit}"
+    # always get maximum news items for all agents but return the limit of the requested limit
+    url += f"&limit={default_limit}"
 
     response = _make_api_request(url, headers={})
     if response.status_code != 200:
@@ -952,7 +965,7 @@ def get_company_news(
 
     # Cache the results using the comprehensive cache key
     _cache.set_company_news(cache_key, [news.model_dump() for news in all_news])
-    return all_news
+    return all_news[:limit]
 
 
 def _get_balance_sheet_equity_data(ticker: str, target_date: str) -> BalanceSheetEquity | None:
